@@ -1,0 +1,17 @@
+{
+  "name": "cartera-valentin",
+  "private": true,
+  "scripts": {
+    "dev": "nuxt dev",
+    "build": "nuxt build",
+    "preview": "nuxt preview"
+  },
+  "dependencies": {
+    "googleapis": "^140.0.1",
+    "nuxt": "^3.13.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@vite-pwa/nuxt": "^0.10.0"
+  }
+}
