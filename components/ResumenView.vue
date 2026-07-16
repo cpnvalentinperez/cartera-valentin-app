@@ -34,7 +34,17 @@
     <label class="lbl" style="margin-top:20px;">Ganancia/Pérdida mensual</label>
     <div v-for="h in resumen.historicoGanancias || []" :key="h.mes" class="row">
       <div class="lbl">{{ h.mes }}</div>
-      <div>{{ h.ganancia >= 0 ? '+' : '' }}{{ formatear(h.ganancia) }}</div>
+      <div style="text-align:right;">
+        <div>{{ h.ganancia >= 0 ? '+' : '' }}{{ formatear(h.ganancia) }}</div>
+        <div class="sub" v-if="h.saldo !== null">Saldo: US${{ formatear(h.saldo) }}</div>
+      </div>
+    </div>
+    <div v-for="s in resumen.snapshots || []" :key="s.mes + s.anio" class="row">
+      <div class="lbl">{{ s.mes }} {{ s.anio }}</div>
+      <div style="text-align:right;">
+        <div>{{ s.ganancia !== null ? (s.ganancia >= 0 ? '+' : '') + formatear(s.ganancia) : '-' }}</div>
+        <div class="sub">Saldo: US${{ formatear(s.valorTotalUSD) }}</div>
+      </div>
     </div>
     <div class="row">
       <div class="lbl">Total del año</div>

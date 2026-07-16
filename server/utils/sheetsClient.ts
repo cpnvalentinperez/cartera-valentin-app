@@ -3,8 +3,18 @@ import { google } from 'googleapis'
 const SPREADSHEET_ID = process.env.GOOGLE_SHEET_ID as string
 
 function getAuth() {
-  const credsJson = process.env.GOOGLE_SERVICE_ACCOUNT_KEY as string
-  if (!credsJson) throw new Error('Falta GOOGLE_SERVICE_ACCOUNT_KEY en las variables de entorno.')
+  const base64 = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_BASE64 as string
+  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_KEY as string
+
+  let credsJson: string
+  if (base64) {
+    credsJson = Buffer.from(base64, 'base64').toString('utf-8')
+  } else if (raw) {
+    credsJson = raw
+  } else {
+    throw new Error('Falta GOOGLE_SERVICE_ACCOUNT_KEY_BASE64 (o GOOGLE_SERVICE_ACCOUNT_KEY) en las variables de entorno.')
+  }
+
   const credentials = JSON.parse(credsJson)
   return new google.auth.GoogleAuth({
     credentials,
@@ -22,7 +32,11 @@ async function sheetsApi() {
  */
 export async function getValues(range: string): Promise<any[][]> {
   const sheets = await sheetsApi()
-  const res = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range })
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range,
+    valueRenderOption: 'UNFORMATTED_VALUE'
+  })
   return res.data.values || []
 }
 

@@ -5,7 +5,7 @@ import {
   calcularDeltas, type PayloadOperacion
 } from './logic'
 
-interface HistoricoGanancia { mes: string, ganancia: number, origen: string }
+interface HistoricoGanancia { mes: string, ganancia: number, saldo: number | null, origen: string }
 
 /**
  * Lee TODA la hoja Movimientos (A2:L) en una sola llamada. Se usa como base
@@ -164,13 +164,15 @@ export async function recalcularSaldos() {
  * Solo lectura, nunca se escribe ahí.
  */
 export async function getHistoricoGanancias(): Promise<HistoricoGanancia[]> {
-  const col = String.fromCharCode(64 + BALANCE_COL_GANANCIA_MES) // K
+  const colK = String.fromCharCode(64 + BALANCE_COL_GANANCIA_MES) // K
+  const colH = String.fromCharCode(64 + BALANCE_COL_SALDO) // H
   const primeraFila = 4
   const ultimaFila = ULTIMO_MES_BALANCE * 4 // Julio = 28
 
-  let valores: any[][] = []
+  let valoresK: any[][] = [], valoresH: any[][] = []
   try {
-    valores = await getValues(`${SHEET_BALANCE}!${col}${primeraFila}:${col}${ultimaFila}`)
+    valoresK = await getValues(`${SHEET_BALANCE}!${colK}${primeraFila}:${colK}${ultimaFila}`)
+    valoresH = await getValues(`${SHEET_BALANCE}!${colH}${primeraFila}:${colH}${ultimaFila}`)
   } catch {
     return []
   }
@@ -178,9 +180,15 @@ export async function getHistoricoGanancias(): Promise<HistoricoGanancia[]> {
   const resultado: HistoricoGanancia[] = []
   for (let i = 0; i < ULTIMO_MES_BALANCE; i++) {
     const indiceRelativo = i * 4 // fila (i+1)*4, offset desde primeraFila=4
-    const valor = valores[indiceRelativo]?.[0]
-    if (valor !== undefined && valor !== '') {
-      resultado.push({ mes: MESES[i], ganancia: Number(valor), origen: 'Balance' })
+    const ganancia = valoresK[indiceRelativo]?.[0]
+    const saldo = valoresH[indiceRelativo]?.[0]
+    if (ganancia !== undefined && ganancia !== '') {
+      resultado.push({
+        mes: MESES[i],
+        ganancia: Number(ganancia),
+        saldo: (saldo !== undefined && saldo !== '') ? Number(saldo) : null,
+        origen: 'Balance'
+      })
     }
   }
   return resultado
@@ -191,7 +199,7 @@ export async function getHistoricoGanancias(): Promise<HistoricoGanancia[]> {
  * valor guardado como la suma de ganancias del año en curso, para no repetir
  * la misma lectura dos veces.
  */
-async function leerSnapshots(): Promise<{ ultimoValor: number | null, sumaAnioActual: number }> {
+async function leerSnapshots(): Promise<{ ultimoValor: number | null, sumaAnioActual: number, lista: { mes: string, anio: number, valorTotalUSD: number, ganancia: number | null }[] }> {
   let filas: any[][] = []
   try {
     filas = await getValues(`${SHEET_SNAPSHOTS}!A2:E`)
@@ -209,24 +217,33 @@ async function leerSnapshots(): Promise<{ ultimoValor: number | null, sumaAnioAc
       valorJulio = []
     }
     const valor = valorJulio[0]?.[0]
-    return { ultimoValor: (valor !== undefined && valor !== '') ? Number(valor) : null, sumaAnioActual: 0 }
+    return { ultimoValor: (valor !== undefined && valor !== '') ? Number(valor) : null, sumaAnioActual: 0, lista: [] }
   }
 
   const anioActual = new Date().getFullYear()
   let sumaAnioActual = 0
+  const lista: { mes: string, anio: number, valorTotalUSD: number, ganancia: number | null }[] = []
+
   for (const fila of filas) {
     const anio = Number(fila[2])
     const ganancia = fila[4]
     if (anio === anioActual && ganancia !== undefined && ganancia !== '') {
       sumaAnioActual += Number(ganancia) || 0
     }
+    lista.push({
+      mes: fila[1],
+      anio,
+      valorTotalUSD: Number(fila[3]) || 0,
+      ganancia: (ganancia !== undefined && ganancia !== '') ? Number(ganancia) : null
+    })
   }
 
   const ultimaFila = filas[filas.length - 1]
   const ultimoValor = Number(ultimaFila[3]) || 0
 
-  return { ultimoValor, sumaAnioActual }
+  return { ultimoValor, sumaAnioActual, lista }
 }
+
 
 export async function getResumenExtendido(tcDolar: number) {
   const base = await getResumen()
@@ -244,7 +261,7 @@ export async function getResumenExtendido(tcDolar: number) {
   } : { pesos: 0, dolares: 0, crypto: 0 }
 
   const historicoGanancias = await getHistoricoGanancias()
-  const { sumaAnioActual } = await leerSnapshots()
+  const { sumaAnioActual, lista: snapshots } = await leerSnapshots()
   const totalHistorico = historicoGanancias.reduce((acc, h) => acc + (Number(h.ganancia) || 0), 0)
 
   return {
@@ -255,6 +272,7 @@ export async function getResumenExtendido(tcDolar: number) {
     valorTotalUSD: totalUSD,
     porcentajes,
     historicoGanancias,
+    snapshots,
     gananciaAnualTotal: totalHistorico + sumaAnioActual
   }
 }
