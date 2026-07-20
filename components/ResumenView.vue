@@ -39,6 +39,13 @@
         <div class="sub" v-if="h.saldo !== null">Saldo: US${{ formatear(h.saldo) }}</div>
       </div>
     </div>
+    <div v-if="resumen.mesEnCurso" class="row" style="border-color:var(--accent);">
+      <div class="lbl" style="color:var(--accent);">{{ resumen.mesEnCurso.mes }} (en curso)</div>
+      <div style="text-align:right;">
+        <div>{{ resumen.mesEnCurso.ganancia >= 0 ? '+' : '' }}{{ formatear(resumen.mesEnCurso.ganancia) }}</div>
+        <div class="sub">Saldo: US${{ formatear(resumen.mesEnCurso.saldo) }}</div>
+      </div>
+    </div>
     <div v-for="s in resumen.snapshots || []" :key="s.mes + s.anio" class="row">
       <div class="lbl">{{ s.mes }} {{ s.anio }}</div>
       <div style="text-align:right;">
