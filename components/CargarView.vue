@@ -77,9 +77,9 @@ const labelTc = computed(() => {
 })
 
 const valido = computed(() => {
-  if (!operacion.value || !cantidad.value) return false
+  if (!operacion.value || cantidad.value === '' || cantidad.value === null) return false
   if (esSimple.value && !moneda.value) return false
-  if (mostrarTc.value && !tc.value && tc.value !== '0') return false
+  if (mostrarTc.value && (tc.value === '' || tc.value === null || tc.value === undefined)) return false
   return true
 })
 
