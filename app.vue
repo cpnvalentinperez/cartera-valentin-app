@@ -6,6 +6,8 @@
     <ResumenView v-if="vista === 'resumen'" />
     <HistorialView v-if="vista === 'historial'" @editar="irAEditar" />
     <SaldoInicialView v-if="vista === 'saldoInicial'" />
+    <InversionesView v-if="vista === 'inversiones'" />
+    <CarteraView v-if="vista === 'cartera'" />
 
     <div style="position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--border);">
       <button v-for="tab in tabs" :key="tab.id"
@@ -29,7 +31,9 @@ const tabs = [
   { id: 'cargar', label: 'Cargar' },
   { id: 'resumen', label: 'Resumen' },
   { id: 'historial', label: 'Historial' },
-  { id: 'saldoInicial', label: 'Saldo inicial' }
+  { id: 'saldoInicial', label: 'Saldo inicial' },
+  { id: 'inversiones', label: 'Cripto' },
+  { id: 'cartera', label: 'Cartera' }
 ]
 
 function irA(id) {
