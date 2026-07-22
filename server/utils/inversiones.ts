@@ -18,7 +18,7 @@ const SHEET_INVERSIONES = 'Inversiones a Largo'
 interface FilaInversion { fila: number; nombre: string; cantidad: number; pp: number }
 
 async function buscarAsset(asset: string): Promise<FilaInversion | null> {
-  const filas = await getValues(`${SHEET_INVERSIONES}!A2:D`)
+  const filas = await getValues(`${SHEET_INVERSIONES}!A2:D120`)
   const idx = filas.findIndex(f => (f[1] || '').toUpperCase() === asset)
   if (idx === -1) return null
   return {
@@ -72,11 +72,11 @@ export async function registrarOperacionInversion(payloadCrudo: unknown) {
 }
 
 export async function getCarteraCompleta() {
-  const filas = await getValues(`${SHEET_INVERSIONES}!A2:D`)
+  const filas = await getValues(`${SHEET_INVERSIONES}!A2:D120`)
   const precios = await getPreciosActuales()
 
   return filas
-    .filter(f => f[1])
+    .filter(f => f[1] && String(f[1]).toUpperCase() !== 'ASSET' && Number(f[2]) > 0)
     .map(f => {
       const asset = f[1]
       const cantidad = Number(f[2]) || 0
