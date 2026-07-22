@@ -1,6 +1,7 @@
 <template>
   <div style="background:var(--card); border-radius:14px; padding:18px; border:1px solid var(--border);">
     <div v-if="cargando" class="lbl">Cargando precios...</div>
+    <div v-else-if="error" class="lbl" style="color:var(--danger);">{{ error }}</div>
     <div v-for="c in cartera" :key="c.asset" class="row">
       <div>
         <div style="font-weight:600;">{{ c.asset }}</div>
@@ -20,11 +21,18 @@
 <script setup>
 const cartera = ref([])
 const cargando = ref(true)
+const error = ref('')
 
 async function cargar() {
   cargando.value = true
-  cartera.value = await $fetch('/api/inversiones')
-  cargando.value = false
+  error.value = ''
+  try {
+    cartera.value = await $fetch('/api/inversiones')
+  } catch (err) {
+    error.value = err.data?.statusMessage || 'No se pudo cargar la cartera.'
+  } finally {
+    cargando.value = false
+  }
 }
 cargar()
 </script>

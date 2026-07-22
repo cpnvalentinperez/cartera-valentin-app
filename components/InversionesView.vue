@@ -38,8 +38,12 @@ const assets = ref([])
 const valido = computed(() => operacion.value && asset.value && cantidad.value !== '' && precio.value !== '')
 
 async function cargarAssets() {
-  const cartera = await $fetch('/api/inversiones')
-  assets.value = cartera.map(c => c.asset)
+  try {
+    const cartera = await $fetch('/api/inversiones')
+    assets.value = cartera.map(c => c.asset)
+  } catch {
+    assets.value = []
+  }
 }
 cargarAssets()
 
