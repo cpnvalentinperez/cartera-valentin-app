@@ -23,11 +23,15 @@
           <span class="precio">{{ c.precioActual !== null ? '$' + formatPrecio(c.precioActual) : '—' }}</span>
         </div>
         <div class="row-bottom">
-          <span class="sub">Ud {{ formatCantidad(c.cantidad) }} · Total ${{ (c.inversionActual ?? c.inversion).toFixed(2) }}</span>
-          <span v-if="c.variacion !== null" :style="{ color: c.variacion >= 0 ? 'var(--accent)' : 'var(--danger)' }">
-            {{ c.variacion >= 0 ? '+' : '' }}{{ c.variacion.toFixed(1) }}%
-          </span>
-          <span v-else class="sub">sin precio</span>
+          <span class="sub">Ud {{ formatCantidad(c.cantidad) }} · Invertido ${{ c.inversion.toFixed(2) }}</span>
+
+          <span v-if="c.inversionActual === null" class="sub">sin precio</span>
+          <div v-else class="valor-actual">
+            <span class="actual">${{ c.inversionActual.toFixed(2) }}</span>
+            <span class="badge" :class="c.variacion >= 0 ? 'up' : 'down'">
+              {{ c.variacion >= 0 ? '+' : '' }}{{ c.variacion.toFixed(1) }}%
+            </span>
+          </div>
         </div>
       </div>
     </template>
@@ -94,11 +98,17 @@ cargar()
 .row { padding:12px 0; border-bottom:1px solid var(--border); }
 .row:last-child { border-bottom:none; }
 .row-top { display:flex; justify-content:space-between; align-items:baseline; }
-.row-bottom { display:flex; justify-content:space-between; align-items:baseline; margin-top:4px; }
+.row-bottom { display:flex; justify-content:space-between; align-items:center; margin-top:4px; gap:8px; }
 .asset { font-weight:700; font-size:18px; }
 .precio { font-weight:700; font-size:18px; }
 .lbl { font-size:13px; color:var(--muted); }
 .sub { font-size:13px; color:var(--muted); }
+.row-bottom > .sub { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.valor-actual { display:flex; align-items:center; gap:6px; flex-shrink:0; }
+.actual { font-weight:700; font-size:14px; }
+.badge { font-size:12px; font-weight:600; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+.badge.up { color:var(--accent); background:rgba(74,222,128,0.12); }
+.badge.down { color:var(--danger); background:rgba(248,113,113,0.12); }
 .inp { width:100%; padding:12px; font-size:16px; border-radius:10px; border:1px solid var(--border); background:#12141a; color:var(--text); }
 .op-btn { padding:10px 8px; border-radius:10px; border:1px solid var(--border); background:#12141a; color:var(--text); font-size:13px; text-align:center; }
 .op-btn.selected { border-color:var(--accent); background:rgba(74,222,128,0.12); color:var(--accent); }

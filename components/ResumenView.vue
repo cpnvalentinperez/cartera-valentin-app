@@ -1,5 +1,8 @@
 <template>
-  <div style="background:var(--card); border-radius:14px; padding:18px; border:1px solid var(--border);">
+  <div>
+    <CotizacionesView @usar="v => tcDolar = v" />
+
+    <div style="background:var(--card); border-radius:14px; padding:18px; border:1px solid var(--border);">
     <div class="row">
       <div class="lbl">Saldo Pesos</div>
       <div style="text-align:right;">
@@ -60,6 +63,7 @@
 
     <button class="submit" style="background:var(--accent-dark);" @click="cerrarMes">Cerrar mes</button>
     <div v-if="msg" :class="msgTipo" style="margin-top:14px; padding:12px; border-radius:10px; font-size:14px;">{{ msg }}</div>
+    </div>
   </div>
 </template>
 

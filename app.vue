@@ -29,11 +29,10 @@ const editando = ref(null)
 
 const tabs = [
   { id: 'cargar', label: 'Cargar' },
-  { id: 'resumen', label: 'Resumen' },
   { id: 'historial', label: 'Historial' },
-  { id: 'saldoInicial', label: 'Saldo inicial' },
-  { id: 'inversiones', label: 'Cripto' },
-  { id: 'cartera', label: 'Cartera' }
+  { id: 'resumen', label: 'Resumen' },  
+  { id: 'inversiones', label: 'Cargar Crypto' },
+  { id: 'cartera', label: 'Cartera Crypto' }
 ]
 
 function irA(id) {

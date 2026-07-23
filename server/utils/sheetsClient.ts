@@ -54,6 +54,21 @@ export async function updateValues(range: string, values: any[][]): Promise<void
 }
 
 /**
+ * Sobrescribe varios rangos en una sola llamada (batchUpdate), para evitar que una
+ * escritura multi-paso quede a medio terminar si algo falla entre llamadas separadas.
+ */
+export async function batchUpdateValues(updates: { range: string, values: any[][] }[]): Promise<void> {
+  const sheets = await sheetsApi()
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      valueInputOption: 'USER_ENTERED',
+      data: updates
+    }
+  })
+}
+
+/**
  * Agrega una fila al final de la hoja indicada (equivalente a appendRow de Apps Script).
  */
 export async function appendValues(sheetName: string, values: any[]): Promise<void> {

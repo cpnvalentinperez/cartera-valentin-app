@@ -1,4 +1,4 @@
-import { getValues, updateValues, appendValues, deleteRow, ensureSheetExists } from './sheetsClient'
+import { getValues, updateValues, batchUpdateValues, appendValues, deleteRow, ensureSheetExists } from './sheetsClient'
 import {
   SHEET_MOVIMIENTOS, SHEET_BALANCE, SHEET_SNAPSHOTS, HEADERS,
   MESES, BALANCE_COL_GANANCIA_MES, BALANCE_COL_SALDO, ULTIMO_MES_CERRADO_BALANCE, COTIZACION_CRYPTO_USD,
@@ -121,6 +121,48 @@ export async function eliminarMovimiento(rowIndex: number) {
   await deleteRow(SHEET_MOVIMIENTOS, rowIndex)
   await recalcularSaldos()
   return { ok: true }
+}
+
+/**
+ * Sobrescribe directamente los deltas (Pesos/Dolares/Crypto) de una fila, sin pasar
+ * por calcularDeltas. Se usa para correcciones puntuales que no encajan en el flujo
+ * normal de operación. No toca Fecha/Tipo/Detalle/Cantidad/TC/Moneda.
+ *
+ * Escribe los deltas nuevos y los saldos recalculados en UNA sola llamada batch:
+ * si se hiciera en dos pasos (escribir deltas, después leer todo de nuevo y
+ * recalcular saldos por separado) una falla a mitad de camino deja los deltas
+ * actualizados pero los saldos desincronizados con ellos.
+ */
+export async function ajustarDeltas(rowIndex: number, deltaPesos: number, deltaDolares: number, deltaCrypto: number) {
+  const filas = await leerMovimientosCompleto()
+  if (esFilaSaldoInicial(filas) && rowIndex === 2) {
+    throw new Error('El saldo inicial se edita desde la pestaña Saldo inicial.')
+  }
+
+  const idx = rowIndex - 2
+  if (idx < 0 || idx >= filas.length) {
+    throw new Error('Movimiento no encontrado.')
+  }
+  filas[idx] = [...filas[idx]]
+  filas[idx][6] = deltaPesos
+  filas[idx][7] = deltaDolares
+  filas[idx][8] = deltaCrypto
+
+  const saldos: number[][] = []
+  let acumPesos = 0, acumDolares = 0, acumCrypto = 0
+  for (const fila of filas) {
+    acumPesos += Number(fila[6]) || 0
+    acumDolares += Number(fila[7]) || 0
+    acumCrypto += Number(fila[8]) || 0
+    saldos.push([acumPesos, acumDolares, acumCrypto])
+  }
+
+  await batchUpdateValues([
+    { range: `${SHEET_MOVIMIENTOS}!G${rowIndex}:I${rowIndex}`, values: [[deltaPesos || '', deltaDolares || '', deltaCrypto || '']] },
+    { range: `${SHEET_MOVIMIENTOS}!J2:L${1 + saldos.length}`, values: saldos }
+  ])
+
+  return await getResumen()
 }
 
 export async function editarMovimiento(rowIndex: number, payload: PayloadOperacion) {
