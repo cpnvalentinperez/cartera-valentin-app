@@ -9,7 +9,7 @@
     <InversionesView v-if="vista === 'inversiones'" />
     <CarteraView v-if="vista === 'cartera'" />
 
-    <div style="position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--border);">
+    <div style="position:fixed; bottom:0; left:0; right:0; display:flex; background:var(--card); border-top:1px solid var(--border); overflow-x:auto;">
       <button v-for="tab in tabs" :key="tab.id"
         @click="irA(tab.id)"
         :style="tabStyle(tab.id)">
@@ -52,12 +52,16 @@ function onCargado() {
 
 function tabStyle(id) {
   return {
-    flex: 1,
-    padding: '16px',
+    flex: '1 1 0',
+    minWidth: '0',
+    padding: '14px 4px',
     background: 'none',
     border: 'none',
-    fontSize: '14px',
+    fontSize: '12px',
     fontWeight: 600,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
     color: vista.value === id ? 'var(--accent)' : 'var(--muted)'
   }
 }
