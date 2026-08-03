@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(env)",
+      "Bash(curl -s -v \"http://127.0.0.1:3000/\")",
+      "Bash(curl -s --noproxy '*' \"http://127.0.0.1:3000/api/resumen?tcDolar=1520\")",
+      "Bash(curl -s --noproxy '*' \"http://[::1]:3000/api/resumen?tcDolar=1520\")",
+      "Bash(taskkill //F //PID 15696)",
+      "Bash(node check-sheet2.mjs)"
+    ]
+  }
+}

@@ -16,7 +16,6 @@ export const TIPOS_CRYPTO_DIRECTO = ['Ingreso Crypto', 'Retiro Crypto']
 export const MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
 export const BALANCE_COL_GANANCIA_MES = 11 // columna K
 export const BALANCE_COL_SALDO = 8 // columna H
-export const ULTIMO_MES_CERRADO_BALANCE = 6 // Junio: último mes completo antes de arrancar con Movimientos. Julio en adelante se calcula en vivo.
 export const COTIZACION_CRYPTO_USD = 1 // USDT, stablecoin 1:1 con USD
 
 export interface PayloadOperacion {

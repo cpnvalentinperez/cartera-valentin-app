@@ -1,7 +1,7 @@
 import { getValues, updateValues, batchUpdateValues, appendValues, deleteRow, ensureSheetExists } from './sheetsClient'
 import {
   SHEET_MOVIMIENTOS, SHEET_BALANCE, SHEET_SNAPSHOTS, HEADERS,
-  MESES, BALANCE_COL_GANANCIA_MES, BALANCE_COL_SALDO, ULTIMO_MES_CERRADO_BALANCE, COTIZACION_CRYPTO_USD,
+  MESES, BALANCE_COL_GANANCIA_MES, BALANCE_COL_SALDO, COTIZACION_CRYPTO_USD,
   calcularDeltas, type PayloadOperacion
 } from './logic'
 
@@ -202,36 +202,36 @@ export async function recalcularSaldos() {
 
 /**
  * Histórico de Ganancia/Pérdida mensual leído de la hoja Balance vieja (columna K),
- * en UNA sola llamada (rango K4:K28) en vez de una llamada por mes.
+ * en UNA sola llamada en vez de una llamada por mes.
  * Solo lectura, nunca se escribe ahí.
  */
 export async function getHistoricoGanancias(): Promise<HistoricoGanancia[]> {
   const colK = String.fromCharCode(64 + BALANCE_COL_GANANCIA_MES) // K
   const colH = String.fromCharCode(64 + BALANCE_COL_SALDO) // H
   const primeraFila = 4
-  const ultimaFila = ULTIMO_MES_CERRADO_BALANCE * 4 // Junio = 24, último mes cerrado antes de Movimientos
+  const ultimaFilaPosible = primeraFila + 4 * (MESES.length - 1) // hasta Diciembre
 
   let valoresK: any[][] = [], valoresH: any[][] = []
   try {
-    valoresK = await getValues(`${SHEET_BALANCE}!${colK}${primeraFila}:${colK}${ultimaFila}`)
-    valoresH = await getValues(`${SHEET_BALANCE}!${colH}${primeraFila}:${colH}${ultimaFila}`)
+    valoresK = await getValues(`${SHEET_BALANCE}!${colK}${primeraFila}:${colK}${ultimaFilaPosible}`)
+    valoresH = await getValues(`${SHEET_BALANCE}!${colH}${primeraFila}:${colH}${ultimaFilaPosible}`)
   } catch {
     return []
   }
 
   const resultado: HistoricoGanancia[] = []
-  for (let i = 0; i < ULTIMO_MES_CERRADO_BALANCE; i++) {
+  for (let i = 0; i < MESES.length; i++) {
     const indiceRelativo = i * 4 // fila (i+1)*4, offset desde primeraFila=4
     const ganancia = valoresK[indiceRelativo]?.[0]
+    if (ganancia === undefined || ganancia === '') break // primer mes sin cerrar en Balance: de acá en más lo cubren Snapshots/mes en curso
+
     const saldo = valoresH[indiceRelativo]?.[0]
-    if (ganancia !== undefined && ganancia !== '') {
-      resultado.push({
-        mes: MESES[i],
-        ganancia: Number(ganancia),
-        saldo: (saldo !== undefined && saldo !== '') ? Number(saldo) : null,
-        origen: 'Balance'
-      })
-    }
+    resultado.push({
+      mes: MESES[i],
+      ganancia: Number(ganancia),
+      saldo: (saldo !== undefined && saldo !== '') ? Number(saldo) : null,
+      origen: 'Balance'
+    })
   }
   return resultado
 }
@@ -240,8 +240,15 @@ export async function getHistoricoGanancias(): Promise<HistoricoGanancia[]> {
  * Lee toda la hoja Snapshots de una vez (si existe) y devuelve tanto el último
  * valor guardado como la suma de ganancias del año en curso, para no repetir
  * la misma lectura dos veces.
+ *
+ * `mesesCubiertosPorBalance` y `ultimoValorBalance` vienen de getHistoricoGanancias:
+ * son los meses que YA están cerrados "a mano" en la hoja Balance (dinámico, lo que
+ * esté cargado ahí). Un snapshot para uno de esos meses se descarta acá para no
+ * mostrarlo duplicado ni contar su ganancia dos veces — Balance manda sobre
+ * Snapshots para esos meses. Si no queda ningún snapshot relevante, se usa el
+ * saldo del último mes cerrado en Balance como punto de partida.
  */
-async function leerSnapshots(): Promise<{ ultimoValor: number | null, sumaAnioActual: number, lista: { mes: string, anio: number, valorTotalUSD: number, ganancia: number | null }[] }> {
+async function leerSnapshots(mesesCubiertosPorBalance: Set<string>, ultimoValorBalance: number | null): Promise<{ ultimoValor: number | null, sumaAnioActual: number, lista: { mes: string, anio: number, valorTotalUSD: number, ganancia: number | null }[] }> {
   let filas: any[][] = []
   try {
     filas = await getValues(`${SHEET_SNAPSHOTS}!A2:E`)
@@ -249,24 +256,21 @@ async function leerSnapshots(): Promise<{ ultimoValor: number | null, sumaAnioAc
     filas = []
   }
 
-  if (filas.length === 0) {
-    const colH = String.fromCharCode(64 + BALANCE_COL_SALDO) // H
-    const filaJunio = ULTIMO_MES_CERRADO_BALANCE * 4
-    let valorJulio: any[][] = []
-    try {
-      valorJulio = await getValues(`${SHEET_BALANCE}!${colH}${filaJunio}:${colH}${filaJunio}`)
-    } catch {
-      valorJulio = []
-    }
-    const valor = valorJulio[0]?.[0]
-    return { ultimoValor: (valor !== undefined && valor !== '') ? Number(valor) : null, sumaAnioActual: 0, lista: [] }
+  const anioActual = new Date().getFullYear()
+  const filasRelevantes = filas.filter(fila => {
+    const mes = String(fila[1] || '').toUpperCase()
+    const anio = Number(fila[2])
+    return !(anio === anioActual && mesesCubiertosPorBalance.has(mes))
+  })
+
+  if (filasRelevantes.length === 0) {
+    return { ultimoValor: ultimoValorBalance, sumaAnioActual: 0, lista: [] }
   }
 
-  const anioActual = new Date().getFullYear()
   let sumaAnioActual = 0
   const lista: { mes: string, anio: number, valorTotalUSD: number, ganancia: number | null }[] = []
 
-  for (const fila of filas) {
+  for (const fila of filasRelevantes) {
     const anio = Number(fila[2])
     const ganancia = fila[4]
     if (anio === anioActual && ganancia !== undefined && ganancia !== '') {
@@ -280,7 +284,7 @@ async function leerSnapshots(): Promise<{ ultimoValor: number | null, sumaAnioAc
     })
   }
 
-  const ultimaFila = filas[filas.length - 1]
+  const ultimaFila = filasRelevantes[filasRelevantes.length - 1]
   const ultimoValor = Number(ultimaFila[3]) || 0
 
   return { ultimoValor, sumaAnioActual, lista }
@@ -303,7 +307,9 @@ export async function getResumenExtendido(tcDolar: number) {
   } : { pesos: 0, dolares: 0, crypto: 0 }
 
   const historicoGanancias = await getHistoricoGanancias()
-  const { ultimoValor, sumaAnioActual, lista: snapshots } = await leerSnapshots()
+  const mesesCubiertosPorBalance = new Set(historicoGanancias.map(h => h.mes))
+  const ultimoValorBalance = historicoGanancias.length > 0 ? historicoGanancias[historicoGanancias.length - 1].saldo : null
+  const { ultimoValor, sumaAnioActual, lista: snapshots } = await leerSnapshots(mesesCubiertosPorBalance, ultimoValorBalance)
   const totalHistorico = historicoGanancias.reduce((acc, h) => acc + (Number(h.ganancia) || 0), 0)
 
   const ahora = new Date()
