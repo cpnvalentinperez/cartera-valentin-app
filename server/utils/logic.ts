@@ -24,6 +24,7 @@ export interface PayloadOperacion {
   cantidad: number | string
   tc?: number | string
   moneda?: 'Pesos' | 'Dolares'
+  montoTotal?: number | string
 }
 
 export interface Deltas {
@@ -65,7 +66,12 @@ export function calcularDeltas(payload: PayloadOperacion): Deltas {
       if (payload.moneda === 'Pesos') {
         tc = Number(payload.tc)
         if (isNaN(tc) || tc <= 0) throw new Error('Precio unitario inválido.')
-        const monto = cantidad * tc
+        let monto = cantidad * tc
+        if (payload.montoTotal !== undefined && payload.montoTotal !== null && payload.montoTotal !== '') {
+          const montoManual = Number(payload.montoTotal)
+          if (isNaN(montoManual) || montoManual <= 0) throw new Error('Importe total inválido.')
+          monto = montoManual
+        }
         deltaCrypto = esCompra ? cantidad : -cantidad
         deltaPesos = esCompra ? -monto : monto
       } else {

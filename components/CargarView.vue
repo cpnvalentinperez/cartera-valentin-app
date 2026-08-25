@@ -31,10 +31,26 @@
     <label class="lbl">Detalle</label>
     <input type="text" v-model="detalle" class="inp">
 
-    <button class="submit" :disabled="!valido || cargando" @click="enviar">
+    <button class="submit" :disabled="!valido || cargando" @click="intentarEnviar">
       {{ editando ? 'Guardar cambios' : (cargando ? 'Cargando...' : 'Cargar') }}
     </button>
     <div v-if="msg" :class="msgTipo" style="margin-top:14px; padding:12px; border-radius:10px; font-size:14px;">{{ msg }}</div>
+    </div>
+
+    <div v-if="mostrarConfirmMonto" class="overlay">
+      <div class="modal">
+        <h3 style="margin:0 0 12px;">Confirmar importe</h3>
+        <p style="color:var(--muted); font-size:13px; margin:0 0 14px;">
+          {{ cantidad }} unidades × ${{ formatNum(tc) }} = ${{ formatNum(montoCalculado) }}.
+          Si el monto real fue distinto (redondeo del exchange, comisión, etc.), ajustalo acá.
+        </p>
+        <label class="lbl">Importe total (ARS)</label>
+        <input type="number" inputmode="decimal" v-model="montoEditable" class="inp">
+        <div style="display:flex; gap:8px; margin-top:18px;">
+          <button class="accion" @click="mostrarConfirmMonto = false">Cancelar</button>
+          <button class="accion guardar" @click="confirmarMonto">Aceptar</button>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -52,6 +68,8 @@ const detalle = ref('')
 const cargando = ref(false)
 const msg = ref('')
 const msgTipo = ref('ok')
+const mostrarConfirmMonto = ref(false)
+const montoEditable = ref('')
 
 const todasLasOperaciones = computed(() => [
   ...config.value.operacionesDobles, ...config.value.operacionesSimples, ...config.value.operacionesCryptoDirecto
@@ -63,6 +81,12 @@ const esDolarDirecto = computed(() => operacion.value === 'Compra Dolar' || oper
 const esCryptoDirecto = computed(() => config.value.operacionesCryptoDirecto.includes(operacion.value))
 
 const mostrarTc = computed(() => esDolarDirecto.value || (esCrypto.value && moneda.value))
+const esCryptoPesos = computed(() => esCrypto.value && moneda.value === 'Pesos')
+const montoCalculado = computed(() => (Number(cantidad.value) || 0) * (Number(tc.value) || 0))
+
+function formatNum(n) {
+  return Number(n || 0).toLocaleString('es-AR', { maximumFractionDigits: 2 })
+}
 
 const labelCantidad = computed(() => {
   if (esDolarDirecto.value) return 'Cantidad (USD)'
@@ -107,12 +131,30 @@ watch(() => props.editando, (m) => {
   detalle.value = m.detalle
 }, { immediate: true })
 
+function intentarEnviar() {
+  if (esCryptoPesos.value) {
+    montoEditable.value = montoCalculado.value
+    mostrarConfirmMonto.value = true
+    return
+  }
+  enviar()
+}
+
+function confirmarMonto() {
+  mostrarConfirmMonto.value = false
+  enviar()
+}
+
 async function enviar() {
   cargando.value = true
   msg.value = ''
   const payload = { operacion: operacion.value, detalle: detalle.value, cantidad: cantidad.value, tc: tc.value, moneda: moneda.value }
+  if (esCryptoPesos.value) {
+    payload.montoTotal = montoEditable.value
+  }
   try {
     if (props.editando) {
+      payload.fechaEsperada = props.editando.fecha
       await $fetch(`/api/movimientos/${props.editando.rowIndex}`, { method: 'PUT', body: payload })
       msg.value = 'Movimiento actualizado.'
       msgTipo.value = 'ok'
@@ -137,6 +179,7 @@ function resetForm() {
   cantidad.value = ''
   tc.value = ''
   detalle.value = ''
+  montoEditable.value = ''
 }
 </script>
 
@@ -149,4 +192,8 @@ function resetForm() {
 .submit:disabled { opacity:0.5; }
 .ok { background:rgba(74,222,128,0.12); color:var(--accent); }
 .error { background:rgba(248,113,113,0.12); color:var(--danger); }
+.overlay { position:fixed; inset:0; background:rgba(0,0,0,0.6); display:flex; align-items:center; justify-content:center; padding:20px; z-index:100; }
+.modal { background:var(--card); border:1px solid var(--border); border-radius:14px; padding:20px; width:100%; max-width:360px; }
+.accion { flex:1; padding:12px; font-size:14px; border-radius:10px; border:1px solid var(--border); background:#12141a; color:var(--text); }
+.accion.guardar { border-color:var(--accent); background:rgba(74,222,128,0.12); color:var(--accent); }
 </style>

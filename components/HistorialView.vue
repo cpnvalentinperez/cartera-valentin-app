@@ -8,7 +8,7 @@
       <div style="display:flex; gap:8px; margin-top:8px;">
         <button class="accion" @click="$emit('editar', m)">Editar</button>
         <button class="accion" @click="toggleAjuste(m)">Ajustar</button>
-        <button class="accion eliminar" @click="eliminar(m.rowIndex)">Eliminar</button>
+        <button class="accion eliminar" @click="eliminar(m)">Eliminar</button>
       </div>
 
       <div v-if="ajustando === m.rowIndex" class="ajuste-panel">
@@ -20,7 +20,7 @@
         <input type="number" inputmode="decimal" v-model="ajuste.deltaCrypto" class="inp-mini">
         <div style="display:flex; gap:8px; margin-top:10px;">
           <button class="accion" @click="ajustando = null">Cancelar</button>
-          <button class="accion guardar" :disabled="guardandoAjuste" @click="guardarAjuste(m.rowIndex)">
+          <button class="accion guardar" :disabled="guardandoAjuste" @click="guardarAjuste(m)">
             {{ guardandoAjuste ? 'Guardando...' : 'Guardar' }}
           </button>
         </div>
@@ -72,26 +72,28 @@ function toggleAjuste(m) {
   ajustando.value = m.rowIndex
 }
 
-async function guardarAjuste(rowIndex) {
+async function guardarAjuste(m) {
   guardandoAjuste.value = true
   try {
-    await $fetch(`/api/movimientos/${rowIndex}/deltas`, { method: 'PUT', body: ajuste.value })
+    await $fetch(`/api/movimientos/${m.rowIndex}/deltas`, { method: 'PUT', body: { ...ajuste.value, fechaEsperada: m.fecha } })
     ajustando.value = null
     await cargar()
   } catch (err) {
     alert(err.data?.statusMessage || 'Error al ajustar.')
+    await cargar()
   } finally {
     guardandoAjuste.value = false
   }
 }
 
-async function eliminar(rowIndex) {
+async function eliminar(m) {
   if (!confirm('¿Eliminar este movimiento? No se puede deshacer.')) return
   try {
-    await $fetch(`/api/movimientos/${rowIndex}`, { method: 'DELETE' })
+    await $fetch(`/api/movimientos/${m.rowIndex}`, { method: 'DELETE', query: { fecha: m.fecha } })
     await cargar()
   } catch (err) {
     alert(err.data?.statusMessage || 'Error al eliminar.')
+    await cargar()
   }
 }
 

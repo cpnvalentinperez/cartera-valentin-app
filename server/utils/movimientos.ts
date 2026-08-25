@@ -113,11 +113,30 @@ export async function getMovimientosRecientes(limite = 20) {
   return resultado
 }
 
-export async function eliminarMovimiento(rowIndex: number) {
+/**
+ * Si el cliente mandó la Fecha que tenía guardada para esta fila, verifica que
+ * siga siendo la misma antes de tocarla. El número de fila físico (rowIndex) no
+ * es un id estable: si otro movimiento se borró/editó entre que el cliente listó
+ * el historial y esta acción, las filas siguientes se corrieron y rowIndex puede
+ * apuntar a un movimiento distinto del que el usuario ve en pantalla. Sin este
+ * chequeo esa situación pisaba en silencio los datos de la fila equivocada.
+ */
+function verificarFilaVigente(filas: any[][], idx: number, fechaEsperada?: string) {
+  if (fechaEsperada && filas[idx]?.[0] !== fechaEsperada) {
+    throw new Error('Este movimiento cambió de posición (se editó o borró otro registro mientras tanto). Refrescá el historial e intentá de nuevo.')
+  }
+}
+
+export async function eliminarMovimiento(rowIndex: number, fechaEsperada?: string) {
   const filas = await leerMovimientosCompleto()
   if (esFilaSaldoInicial(filas) && rowIndex === 2) {
     throw new Error('El saldo inicial no se borra desde acá.')
   }
+  const idx = rowIndex - 2
+  if (idx < 0 || idx >= filas.length) {
+    throw new Error('Movimiento no encontrado.')
+  }
+  verificarFilaVigente(filas, idx, fechaEsperada)
   await deleteRow(SHEET_MOVIMIENTOS, rowIndex)
   await recalcularSaldos()
   return { ok: true }
@@ -133,7 +152,7 @@ export async function eliminarMovimiento(rowIndex: number) {
  * recalcular saldos por separado) una falla a mitad de camino deja los deltas
  * actualizados pero los saldos desincronizados con ellos.
  */
-export async function ajustarDeltas(rowIndex: number, deltaPesos: number, deltaDolares: number, deltaCrypto: number) {
+export async function ajustarDeltas(rowIndex: number, deltaPesos: number, deltaDolares: number, deltaCrypto: number, fechaEsperada?: string) {
   const filas = await leerMovimientosCompleto()
   if (esFilaSaldoInicial(filas) && rowIndex === 2) {
     throw new Error('El saldo inicial se edita desde la pestaña Saldo inicial.')
@@ -143,6 +162,7 @@ export async function ajustarDeltas(rowIndex: number, deltaPesos: number, deltaD
   if (idx < 0 || idx >= filas.length) {
     throw new Error('Movimiento no encontrado.')
   }
+  verificarFilaVigente(filas, idx, fechaEsperada)
   filas[idx] = [...filas[idx]]
   filas[idx][6] = deltaPesos
   filas[idx][7] = deltaDolares
@@ -165,21 +185,46 @@ export async function ajustarDeltas(rowIndex: number, deltaPesos: number, deltaD
   return await getResumen()
 }
 
-export async function editarMovimiento(rowIndex: number, payload: PayloadOperacion) {
+/**
+ * Igual que ajustarDeltas: escribe la fila editada y los saldos recalculados de
+ * TODAS las filas en una sola llamada batch, para que una falla a mitad de camino
+ * no deje la fila editada actualizada pero los saldos (propios y de las filas
+ * siguientes, que dependen del acumulado) desincronizados.
+ */
+export async function editarMovimiento(rowIndex: number, payload: PayloadOperacion, fechaEsperada?: string) {
   const filas = await leerMovimientosCompleto()
   if (esFilaSaldoInicial(filas) && rowIndex === 2) {
     throw new Error('El saldo inicial se edita desde la pestaña Saldo inicial.')
   }
 
-  const calc = calcularDeltas(payload)
-  const fechaOriginal = filas[rowIndex - 2]?.[0]
+  const idx = rowIndex - 2
+  if (idx < 0 || idx >= filas.length) {
+    throw new Error('Movimiento no encontrado.')
+  }
+  verificarFilaVigente(filas, idx, fechaEsperada)
 
-  await updateValues(`${SHEET_MOVIMIENTOS}!A${rowIndex}:I${rowIndex}`, [[
+  const calc = calcularDeltas(payload)
+  const fechaOriginal = filas[idx][0]
+
+  filas[idx] = [
     fechaOriginal, payload.operacion, payload.detalle || '', calc.cantidad, calc.tc || '',
     calc.monedaGuardada, calc.deltaPesos || '', calc.deltaDolares || '', calc.deltaCrypto || ''
-  ]])
+  ]
 
-  await recalcularSaldos()
+  const saldos: number[][] = []
+  let acumPesos = 0, acumDolares = 0, acumCrypto = 0
+  for (const fila of filas) {
+    acumPesos += Number(fila[6]) || 0
+    acumDolares += Number(fila[7]) || 0
+    acumCrypto += Number(fila[8]) || 0
+    saldos.push([acumPesos, acumDolares, acumCrypto])
+  }
+
+  await batchUpdateValues([
+    { range: `${SHEET_MOVIMIENTOS}!A${rowIndex}:I${rowIndex}`, values: [filas[idx]] },
+    { range: `${SHEET_MOVIMIENTOS}!J2:L${1 + saldos.length}`, values: saldos }
+  ])
+
   return { ok: true }
 }
 
