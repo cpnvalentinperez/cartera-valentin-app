@@ -3,7 +3,7 @@
     <!-- <CotizacionesView @usar="v => tc = v" /> -->
 
     <div style="background:var(--card); border-radius:14px; padding:18px; border:1px solid var(--border);">
-    <label class="lbl">Operación</label>
+    <!-- <label class="lbl">Operación</label> -->
     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:6px;">
       <div v-for="op in todasLasOperaciones" :key="op"
         class="op-btn" :class="{ selected: operacion === op }"

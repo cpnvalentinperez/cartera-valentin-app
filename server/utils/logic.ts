@@ -10,7 +10,7 @@ export const HEADERS = [
 
 export const TIPOS_DOBLES = ['Compra Dolar', 'Venta Dolar']
 export const TIPOS_CRYPTO = ['Compra Crypto', 'Venta Crypto']
-export const TIPOS_SIMPLES = ['Compra Crypto', 'Venta Crypto', 'Retiros', 'Ingresos']
+export const TIPOS_SIMPLES = ['Compra Crypto', 'Venta Crypto', 'Ingresos', 'Retiros']
 export const TIPOS_CRYPTO_DIRECTO = ['Ingreso Crypto', 'Retiro Crypto']
 
 export const MESES = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
