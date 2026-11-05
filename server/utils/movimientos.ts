@@ -37,19 +37,36 @@ export function aNumero(v: unknown): number {
 }
 
 /**
- * Única fuente de verdad: los saldos se DERIVAN de los deltas (G:I).
- * Las columnas J:L son solo una caché para ver en el Sheet; nunca se leen.
+ * Fuente de verdad: los saldos GUARDADOS en J:L (pueden tener ajustes hechos a
+ * mano en el Sheet que no figuran como delta). Si una fila tiene J:L vacío, se
+ * completa con el saldo anterior + su delta.
  */
-function calcularSaldos(filas: any[][]): number[][] {
-  let p = 0, d = 0, c = 0
+function saldosGuardados(filas: any[][]): number[][] {
+  let prev = [0, 0, 0]
   return filas.map(fila => {
-    p += aNumero(fila[6]); d += aNumero(fila[7]); c += aNumero(fila[8])
-    return [p, d, c]
+    prev = [0, 1, 2].map(k => {
+      const v = fila[9 + k]
+      return (v === undefined || v === '') ? prev[k] + aNumero(fila[6 + k]) : aNumero(v)
+    })
+    return prev
   })
 }
 
+/**
+ * Aplica una diferencia de deltas a los saldos guardados desde la fila `desde`
+ * (índice 0-based) en adelante, sin recalcular desde cero: así se respetan los
+ * ajustes manuales de J:L.
+ */
+function correrSaldos(saldos: number[][], desde: number, dif: number[]): number[][] {
+  return saldos.map((s, i) => i < desde ? s : s.map((v, k) => v + dif[k]))
+}
+
+function deltasDe(fila: any[]): number[] {
+  return [aNumero(fila[6]), aNumero(fila[7]), aNumero(fila[8])]
+}
+
 function saldoFinal(filas: any[][]): [number, number, number] {
-  const s = calcularSaldos(filas)
+  const s = saldosGuardados(filas)
   const u = s[s.length - 1]
   return u ? [u[0], u[1], u[2]] : [0, 0, 0]
 }
@@ -168,10 +185,12 @@ export async function eliminarMovimiento(rowIndex: number, fechaEsperada?: strin
     throw new Error('Movimiento no encontrado.')
   }
   verificarFilaVigente(filas, idx, fechaEsperada)
-  const restantes = filas.filter((_, i) => i !== idx)
-  // Borrado + saldos recalculados en una sola batchUpdate atómica (antes: 2 llamadas,
-  // si la segunda fallaba o Vercel cortaba por timeout, J:L quedaba con el delta borrado).
-  await deleteRowAndWriteNumbers(SHEET_MOVIMIENTOS, rowIndex, 2, 9, calcularSaldos(restantes))
+  // Las filas siguientes pierden el delta borrado; las anteriores quedan igual.
+  const borrado = deltasDe(filas[idx])
+  const saldos = correrSaldos(saldosGuardados(filas), idx + 1, borrado.map(v => -v))
+  const restantes = saldos.filter((_, i) => i !== idx)
+  // Borrado + saldos corridos en una sola batchUpdate atómica.
+  await deleteRowAndWriteNumbers(SHEET_MOVIMIENTOS, rowIndex, 2, 9, restantes)
   return { ok: true }
 }
 
@@ -196,12 +215,9 @@ export async function ajustarDeltas(rowIndex: number, deltaPesos: number, deltaD
     throw new Error('Movimiento no encontrado.')
   }
   verificarFilaVigente(filas, idx, fechaEsperada)
-  filas[idx] = [...filas[idx]]
-  filas[idx][6] = deltaPesos
-  filas[idx][7] = deltaDolares
-  filas[idx][8] = deltaCrypto
-
-  const saldos = calcularSaldos(filas)
+  const anterior = deltasDe(filas[idx])
+  const nuevos = [deltaPesos, deltaDolares, deltaCrypto].map(v => Number(v) || 0)
+  const saldos = correrSaldos(saldosGuardados(filas), idx, nuevos.map((v, k) => v - anterior[k]))
 
   await batchUpdateValues([
     { range: `${SHEET_MOVIMIENTOS}!G${rowIndex}:I${rowIndex}`, values: [[deltaPesos || '', deltaDolares || '', deltaCrypto || '']] },
@@ -231,13 +247,16 @@ export async function editarMovimiento(rowIndex: number, payload: PayloadOperaci
 
   const calc = calcularDeltas(payload)
   const fechaOriginal = filas[idx][0]
+  const anterior = deltasDe(filas[idx])
+  const saldosPrevios = saldosGuardados(filas)
 
   filas[idx] = [
     fechaOriginal, payload.operacion, payload.detalle || '', calc.cantidad, calc.tc || '',
     calc.monedaGuardada, calc.deltaPesos || '', calc.deltaDolares || '', calc.deltaCrypto || ''
   ]
 
-  const saldos = calcularSaldos(filas)
+  const dif = deltasDe(filas[idx]).map((v, k) => v - anterior[k])
+  const saldos = correrSaldos(saldosPrevios, idx, dif)
 
   await batchUpdateValues([
     { range: `${SHEET_MOVIMIENTOS}!A${rowIndex}:I${rowIndex}`, values: [filas[idx]] },
@@ -245,15 +264,6 @@ export async function editarMovimiento(rowIndex: number, payload: PayloadOperaci
   ])
 
   return { ok: true }
-}
-
-export async function recalcularSaldos() {
-  const filas = await leerMovimientosCompleto()
-  if (filas.length === 0) return
-
-  const saldos = calcularSaldos(filas)
-  await updateValues(`${SHEET_MOVIMIENTOS}!J2:L${1 + saldos.length}`, saldos)
-  return { ok: true, filas: saldos.length, saldoFinal: saldos[saldos.length - 1] }
 }
 
 /**
