@@ -1,4 +1,4 @@
-import { getValues, updateValues, batchUpdateValues, appendValues, deleteRow, ensureSheetExists } from './sheetsClient'
+import { getValues, updateValues, batchUpdateValues, appendValues, deleteRowAndWriteNumbers, esRangoInexistente, ensureSheetExists } from './sheetsClient'
 import {
   SHEET_MOVIMIENTOS, SHEET_BALANCE, SHEET_SNAPSHOTS, HEADERS,
   MESES, BALANCE_COL_GANANCIA_MES, BALANCE_COL_SALDO, COTIZACION_CRYPTO_USD,
@@ -8,16 +8,50 @@ import {
 interface HistoricoGanancia { mes: string, ganancia: number, saldo: number | null, origen: string }
 
 /**
- * Lee TODA la hoja Movimientos (A2:L) en una sola llamada. Se usa como base
- * para registrar, resumir y listar, en vez de hacer una llamada separada por dato.
- * Si la hoja no existe todavía, devuelve [] en vez de tirar error.
+ * Lee TODA la hoja Movimientos (A2:L) en una sola llamada.
+ * Solo devuelve [] si la hoja NO existe. Cualquier otro error (429 de cuota,
+ * timeout, red) se propaga: antes se tragaba y el caller seguía con filas=[],
+ * lo que generaba filas con saldo = solo el delta, o deletes sin recalcular.
  */
 async function leerMovimientosCompleto(): Promise<any[][]> {
   try {
     return await getValues(`${SHEET_MOVIMIENTOS}!A2:L`)
-  } catch {
-    return []
+  } catch (err) {
+    if (esRangoInexistente(err)) return []
+    throw err
   }
+}
+
+/**
+ * Convierte una celda a número. Acepta números (lo normal con UNFORMATTED_VALUE)
+ * y texto cargado a mano en formato es-AR ("1.234,56") o en-US ("1234.56").
+ */
+export function aNumero(v: unknown): number {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  const s = String(v ?? '').trim().replace(/\s|\$/g, '')
+  if (s === '') return 0
+  const esMilesAR = /^-?\d{1,3}(\.\d{3})+$/.test(s) // "1.000" = mil, no 1
+  const normalizado = (s.includes(',') || esMilesAR) ? s.replace(/\./g, '').replace(',', '.') : s
+  const n = Number(normalizado)
+  return Number.isFinite(n) ? n : 0
+}
+
+/**
+ * Única fuente de verdad: los saldos se DERIVAN de los deltas (G:I).
+ * Las columnas J:L son solo una caché para ver en el Sheet; nunca se leen.
+ */
+function calcularSaldos(filas: any[][]): number[][] {
+  let p = 0, d = 0, c = 0
+  return filas.map(fila => {
+    p += aNumero(fila[6]); d += aNumero(fila[7]); c += aNumero(fila[8])
+    return [p, d, c]
+  })
+}
+
+function saldoFinal(filas: any[][]): [number, number, number] {
+  const s = calcularSaldos(filas)
+  const u = s[s.length - 1]
+  return u ? [u[0], u[1], u[2]] : [0, 0, 0]
 }
 
 function esFilaSaldoInicial(filas: any[][]): boolean {
@@ -33,10 +67,7 @@ export async function registrarOperacion(payload: PayloadOperacion) {
     await ensureSheetExists(SHEET_MOVIMIENTOS, HEADERS)
   }
 
-  const ultima = filas[filas.length - 1]
-  const saldoPesosAnterior = ultima ? (Number(ultima[9]) || 0) : 0
-  const saldoDolaresAnterior = ultima ? (Number(ultima[10]) || 0) : 0
-  const saldoCryptoAnterior = ultima ? (Number(ultima[11]) || 0) : 0
+  const [saldoPesosAnterior, saldoDolaresAnterior, saldoCryptoAnterior] = saldoFinal(filas)
 
   const saldoPesos = saldoPesosAnterior + calc.deltaPesos
   const saldoDolares = saldoDolaresAnterior + calc.deltaDolares
@@ -56,11 +87,11 @@ export async function getResumen() {
   if (filas.length === 0) {
     return { saldoPesos: 0, saldoDolares: 0, saldoCrypto: 0, tieneSaldoInicial: false }
   }
-  const ultima = filas[filas.length - 1]
+  const [saldoPesos, saldoDolares, saldoCrypto] = saldoFinal(filas)
   return {
-    saldoPesos: Number(ultima[9]) || 0,
-    saldoDolares: Number(ultima[10]) || 0,
-    saldoCrypto: Number(ultima[11]) || 0,
+    saldoPesos,
+    saldoDolares,
+    saldoCrypto,
     tieneSaldoInicial: esFilaSaldoInicial(filas)
   }
 }
@@ -122,7 +153,7 @@ export async function getMovimientosRecientes(limite = 20) {
  * chequeo esa situación pisaba en silencio los datos de la fila equivocada.
  */
 function verificarFilaVigente(filas: any[][], idx: number, fechaEsperada?: string) {
-  if (fechaEsperada && filas[idx]?.[0] !== fechaEsperada) {
+  if (fechaEsperada && String(filas[idx]?.[0]) !== String(fechaEsperada)) {
     throw new Error('Este movimiento cambió de posición (se editó o borró otro registro mientras tanto). Refrescá el historial e intentá de nuevo.')
   }
 }
@@ -137,8 +168,10 @@ export async function eliminarMovimiento(rowIndex: number, fechaEsperada?: strin
     throw new Error('Movimiento no encontrado.')
   }
   verificarFilaVigente(filas, idx, fechaEsperada)
-  await deleteRow(SHEET_MOVIMIENTOS, rowIndex)
-  await recalcularSaldos()
+  const restantes = filas.filter((_, i) => i !== idx)
+  // Borrado + saldos recalculados en una sola batchUpdate atómica (antes: 2 llamadas,
+  // si la segunda fallaba o Vercel cortaba por timeout, J:L quedaba con el delta borrado).
+  await deleteRowAndWriteNumbers(SHEET_MOVIMIENTOS, rowIndex, 2, 9, calcularSaldos(restantes))
   return { ok: true }
 }
 
@@ -168,14 +201,7 @@ export async function ajustarDeltas(rowIndex: number, deltaPesos: number, deltaD
   filas[idx][7] = deltaDolares
   filas[idx][8] = deltaCrypto
 
-  const saldos: number[][] = []
-  let acumPesos = 0, acumDolares = 0, acumCrypto = 0
-  for (const fila of filas) {
-    acumPesos += Number(fila[6]) || 0
-    acumDolares += Number(fila[7]) || 0
-    acumCrypto += Number(fila[8]) || 0
-    saldos.push([acumPesos, acumDolares, acumCrypto])
-  }
+  const saldos = calcularSaldos(filas)
 
   await batchUpdateValues([
     { range: `${SHEET_MOVIMIENTOS}!G${rowIndex}:I${rowIndex}`, values: [[deltaPesos || '', deltaDolares || '', deltaCrypto || '']] },
@@ -211,14 +237,7 @@ export async function editarMovimiento(rowIndex: number, payload: PayloadOperaci
     calc.monedaGuardada, calc.deltaPesos || '', calc.deltaDolares || '', calc.deltaCrypto || ''
   ]
 
-  const saldos: number[][] = []
-  let acumPesos = 0, acumDolares = 0, acumCrypto = 0
-  for (const fila of filas) {
-    acumPesos += Number(fila[6]) || 0
-    acumDolares += Number(fila[7]) || 0
-    acumCrypto += Number(fila[8]) || 0
-    saldos.push([acumPesos, acumDolares, acumCrypto])
-  }
+  const saldos = calcularSaldos(filas)
 
   await batchUpdateValues([
     { range: `${SHEET_MOVIMIENTOS}!A${rowIndex}:I${rowIndex}`, values: [filas[idx]] },
@@ -232,17 +251,9 @@ export async function recalcularSaldos() {
   const filas = await leerMovimientosCompleto()
   if (filas.length === 0) return
 
-  const saldos: number[][] = []
-  let acumPesos = 0, acumDolares = 0, acumCrypto = 0
-
-  for (const fila of filas) {
-    acumPesos += Number(fila[6]) || 0
-    acumDolares += Number(fila[7]) || 0
-    acumCrypto += Number(fila[8]) || 0
-    saldos.push([acumPesos, acumDolares, acumCrypto])
-  }
-
+  const saldos = calcularSaldos(filas)
   await updateValues(`${SHEET_MOVIMIENTOS}!J2:L${1 + saldos.length}`, saldos)
+  return { ok: true, filas: saldos.length, saldoFinal: saldos[saldos.length - 1] }
 }
 
 /**

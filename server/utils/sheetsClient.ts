@@ -126,6 +126,38 @@ export async function deleteRow(sheetName: string, rowIndex: number): Promise<vo
 }
 
 /**
+ * Borra una fila y reescribe un rango de valores numéricos en UNA sola llamada
+ * spreadsheets.batchUpdate (atómica: o se aplican ambas o ninguna).
+ * `startRow` es 1-indexado y se interpreta DESPUÉS del borrado.
+ */
+export async function deleteRowAndWriteNumbers(
+  sheetName: string, rowIndex: number, startRow: number, startCol: number, values: number[][]
+): Promise<void> {
+  const sheetId = await getSheetIdByName(sheetName)
+  if (sheetId === null) throw new Error(`No se encontró la hoja ${sheetName}`)
+  const sheets = await sheetsApi()
+  const requests: any[] = [{
+    deleteDimension: { range: { sheetId, dimension: 'ROWS', startIndex: rowIndex - 1, endIndex: rowIndex } }
+  }]
+  if (values.length > 0) {
+    requests.push({
+      updateCells: {
+        start: { sheetId, rowIndex: startRow - 1, columnIndex: startCol },
+        fields: 'userEnteredValue',
+        rows: values.map(fila => ({ values: fila.map(n => ({ userEnteredValue: { numberValue: n } })) }))
+      }
+    })
+  }
+  await sheets.spreadsheets.batchUpdate({ spreadsheetId: SPREADSHEET_ID, requestBody: { requests } })
+}
+
+/** true si el error de la API es "la hoja/rango no existe" (no un error transitorio). */
+export function esRangoInexistente(err: any): boolean {
+  const msg = String(err?.message || err?.errors?.[0]?.message || '')
+  return /Unable to parse range/i.test(msg)
+}
+
+/**
  * Crea una hoja nueva con headers si todavía no existe. Devuelve true si la creó.
  */
 export async function ensureSheetExists(sheetName: string, headers: string[]): Promise<boolean> {
